@@ -10,7 +10,6 @@ OpenCore EFI for the **Lenovo ThinkPad T14 Gen 4 (Intel, 13th gen)** running **m
 ![About This Mac on the T14 Gen 4](docs/screenshots/about-this-mac.png)
 
 <details>
-<summary>Full desktop screenshot</summary>
 
 ![Desktop](docs/screenshots/desktop.png)
 
