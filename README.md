@@ -7,6 +7,15 @@ OpenCore EFI for the **Lenovo ThinkPad T14 Gen 4 (Intel, 13th gen)** running **m
 > Experimental. The graphics stack is a patched Tiger Lake driver running on Raptor Lake. Expect occasional stutters,
 > and keep a backup EFI on a USB stick. **Only build 25G241 is supported. Do not update macOS.**
 
+![About This Mac on the T14 Gen 4](docs/screenshots/about-this-mac.png)
+
+<details>
+<summary>Full desktop screenshot</summary>
+
+![Desktop](docs/screenshots/desktop.png)
+
+</details>
+
 ---
 
 ## Hardware
