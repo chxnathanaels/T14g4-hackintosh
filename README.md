@@ -14,6 +14,7 @@ OpenCore EFI for the **Lenovo ThinkPad T14 Gen 4 (Intel, 13th gen)** running **m
 | Component | Model |
 |---|---|
 | Laptop | Lenovo ThinkPad T14 Gen 4 (Intel) |
+| RAM | 32 GB DDR5-5200 |
 | CPU | Intel Core i5-1345U (Raptor Lake-U, 2P + 8E, 12 threads) |
 | iGPU | Intel Iris Xe, 80 EU, `8086:A7A1`, spoofed as Tiger Lake `9A49` |
 | Display | 14" 1920×1200 eDP |
