@@ -9246,6 +9246,17 @@ void XE::adlnSetDualClock(IOService *controller,uint64_t nativeHz) {
             evidence[7]=reinterpret_cast<bool (*)(const IOWorkLoop *)>(callbackXE->adlnWorkLoopInGate)(loop);
             if(!evidence[7]) {
                 ready=reinterpret_cast<bool (*)(IOWorkLoop *)>(callbackXE->adlnWorkLoopTryClose)(loop);
+                // Experimental (-wexgateretry): the work loop may be briefly busy. Retry for up to
+                // ~80 ms, dropping our own lock while waiting so the gate holder can progress.
+                // State is re-validated below (controller/loop/active pipes) before any clock write.
+                if(!ready && checkKernelArgument("-wexgateretry")) {
+                    for(unsigned i=0;i<40 && !ready;++i) {
+                        IOLockUnlock(c.lock);IOSleep(2);IOLockLock(c.lock);
+                        evidence[27]=i+1;
+                        if(loop!=c.workLoop || controller!=c.controller || c.bridge.state.faulted || c.clockFaulted)break;
+                        ready=reinterpret_cast<bool (*)(IOWorkLoop *)>(callbackXE->adlnWorkLoopTryClose)(loop);
+                    }
+                }
                 if(ready) {acquired=loop;evidence[8]=1;}
             }
         }
