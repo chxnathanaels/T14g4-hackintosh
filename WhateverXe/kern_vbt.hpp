@@ -107,7 +107,11 @@ inline void panelFacts(const uint8_t *b,size_t header,size_t size,Ports &ports) 
         if(b[at]==44){duplicate|=power!=nullptr;power=block;powerSize=n;}
         at+=3+n;
     }
-    if(duplicate || !options || optionsSize<1 || options[0]>=16 ||
+    // Panel type 0xFF means "chosen at runtime" (OpRegion/PnP match). Some OEM
+    // firmware (Lenovo RPL-U) ships it; like i915's final fallback, use entry 0.
+    // Only that exact value is remapped; other out-of-range types still reject.
+    const unsigned panelType=(options && optionsSize>=1 && options[0]==0xFF) ? 0U : (options ? options[0] : 0xFFU);
+    if(duplicate || !options || optionsSize<1 || panelType>=16 ||
        !edp || edpSize<212 || (ports.version>=232 && (!power || powerSize<56)))return;
     unsigned internal=PortCount;
     for(unsigned d=0;d<PortCount;++d)if((ports.present&(1U<<d)) &&
@@ -117,7 +121,7 @@ inline void panelFacts(const uint8_t *b,size_t header,size_t size,Ports &ports) 
     }
     if(internal==PortCount)return;
     auto &p=ports.panel;
-    p.type=options[0];p.ddi=internal;
+    p.type=panelType;p.ddi=internal;
     p.lowSwing=((u64(edp+204)>>(4*p.type))&15)==0;
     p.hobl=ports.version>=232 && (u16(power+54)&(1U<<p.type));
     p.valid=true;
