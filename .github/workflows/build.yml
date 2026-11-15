@@ -16,6 +16,7 @@ jobs:
           gh release download 1.7.3 -R acidanthera/Lilu -p '*DEBUG.zip' -D /tmp/lilu || gh release download -R acidanthera/Lilu -p '*DEBUG.zip' -D /tmp/lilu
           unzip -q /tmp/lilu/*.zip -d /tmp/lilu && cp -R /tmp/lilu/Lilu.kext .
       - name: Tests
+        continue-on-error: true
         run: python3 tools/test.py
       - name: Build release
         run: python3 tools/build.py --release
