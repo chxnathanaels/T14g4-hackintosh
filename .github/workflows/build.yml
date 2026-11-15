@@ -1,0 +1,29 @@
+name: Build WhateverXe (A7A1 patched)
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          git clone --depth 1 https://github.com/acidanthera/MacKernelSDK MacKernelSDK
+          gh release download 1.7.3 -R acidanthera/Lilu -p '*DEBUG.zip' -D /tmp/lilu || gh release download -R acidanthera/Lilu -p '*DEBUG.zip' -D /tmp/lilu
+          unzip -q /tmp/lilu/*.zip -d /tmp/lilu && cp -R /tmp/lilu/Lilu.kext .
+      - name: Tests
+        run: python3 tools/test.py
+      - name: Build release
+        run: python3 tools/build.py --release
+      - name: Commit binaries back
+        run: |
+          mkdir -p out && rm -rf out/*
+          cp -R build/WhateverXe.kext out/
+          [ -d build/AppleIntelTGLCompat.kext ] && cp -R build/AppleIntelTGLCompat.kext out/ || true
+          ls -R out | head -30
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          git add -f out && git commit -m "Built kexts [skip ci]" && git push
