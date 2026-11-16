@@ -345,6 +345,7 @@ private:
 	uint64_t adlnPlatform[0x1C0/8] {};
 	IOService *adlnTopologyController {};
 	mach_vm_address_t orgAlderLakeNGetOSInformation {},orgAlderLakeNPortState {};
+	mach_vm_address_t orgD13LinkConfig {};
 	bool display13FBMemoryHooksReady {false};
 	bool display13FBGTTHooksReady {false};
 	mach_vm_address_t orgDisplay13FBMemoryInit {};
@@ -397,6 +398,7 @@ private:
     static uint32_t wrapDisplay13TCSignal(void *,uint32_t,uint32_t,void *);
 	__attribute__((noinline)) bool processDisplay13FramebufferTopology(KernelPatcher &patcher,size_t index,mach_vm_address_t address,size_t size);
 	static bool wrapAlderLakeNGetOSInformation(IOService *controller);
+	static uint32_t wrapD13LinkConfig(void *path, void *config);
 	static uint32_t wrapAlderLakeNPortState(OSObject *port);
     mach_vm_address_t orgDisplay13GMBus {},orgDisplay13GMBusRead {},orgDisplay13GMBusWrite {},adlnGMBusFunction {};
     mach_vm_address_t orgDisplay13FBEnable {},orgAlderLakeNConnectionAttr {},orgAlderLakeNPortDDC {},orgDisplay13FBDDC {};

@@ -6709,7 +6709,58 @@ bool XE::processDisplay13FramebufferTopology(KernelPatcher &patcher,size_t index
 		{state,wrapAlderLakeNPortState,orgAlderLakeNPortState}
 	};
 	const bool ready=patcher.routeMultipleShort(index,routes,arrsize(routes),address,size);
-	patcher.clearError();return ready;
+	patcher.clearError();
+	// Experimental (-wexlinkfix): AppleIntelDisplayPath::getLinkConfig never fills IOFBDPLinkConfig.bitRate
+	// ("Bringup TODO: implement link rate determination from HW values"). Fill it from the firmware's DPLL.
+	if(ready && checkKernelArgument("-wexlinkfix")) {
+		const char *lc="__ZN21AppleIntelDisplayPath13getLinkConfigEP16IOFBDPLinkConfig";
+		const uint8_t lcEntry[] {0x55,0x48,0x89,0xE5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x50};
+		const auto lcFn=patcher.solveSymbol<mach_vm_address_t>(index,lc,address,size);patcher.clearError();
+		bool routed=false;
+		if(lcFn==address+0x95B5A && size>0x95C90 && !memcmp(reinterpret_cast<void *>(lcFn),lcEntry,sizeof(lcEntry))) {
+			KernelPatcher::RouteRequest r(lc,wrapD13LinkConfig,orgD13LinkConfig);
+			routed=patcher.routeMultiple(index,&r,1,address,size);patcher.clearError();
+		}
+		IORegistryEntry::getRegistryRoot()->setProperty("WEXLinkFixRouted",routed);
+	}
+	return ready;
+}
+
+uint32_t XE::wrapD13LinkConfig(void *path, void *config) {
+	const auto r=FunctionCast(wrapD13LinkConfig,callbackXE->orgD13LinkConfig)(path,config);
+	if(!path || !config)return r;
+	auto out=static_cast<uint8_t *>(config);
+	uint64_t rec[10] {2,out[2],UINT32_MAX,0,0,0,0,0,0,0};
+	auto port=Display13FBMemory::field<uint8_t *>(path,0x3648);
+	auto cfgp=port ? Display13FBMemory::field<uint32_t *>(port,0x548) : nullptr;
+	const unsigned ddi=cfgp ? cfgp[0] : UINT32_MAX;rec[2]=ddi;
+	auto map=display13FBPower.map;
+	if(ddi<2 && (callbackXE->adlnOutputWiring.panel&(1U<<ddi)) && map && map->getVirtualAddress() && map->getLength()>=0x200000) {
+		auto rd=[&](uint32_t o){return *reinterpret_cast<volatile uint32_t *>(map->getVirtualAddress()+o);};
+		const uint32_t clka=rd(0x164280);rec[3]=clka;
+		const unsigned pll=(clka>>(2*ddi))&3;const bool off=(clka>>(10+ddi))&1;
+		const uint32_t dssm=rd(0x51004);const unsigned ri=(dssm>>29)&7;
+		if(!off && pll<2 && ri<3) {
+			const uint32_t c0=rd(0x164284+8*pll),c1=rd(0x164288+8*pll);rec[4]=c0;rec[5]=c1;
+			const uint32_t refs[] {24000,19200,38400};uint64_t ref=refs[ri];if(ref==38400)ref=19200;
+			const uint64_t dco=(c0&0x3FF)*ref+((((c0>>10)&0x7FFF)*ref)>>15);rec[6]=dco;
+			const unsigned pc=(c1>>2)&0xF,kc=(c1>>6)&7,qm=(c1>>9)&1,qr=(c1>>10)&0xFF;
+			const unsigned p0=pc==1?2:pc==2?3:pc==4?5:pc==8?7:0;
+			const unsigned p2=kc==1?1:kc==2?2:kc==4?3:0;
+			const unsigned p1=qm?qr:1;
+			if(p0 && p1 && p2 && dco) {
+				const uint64_t khz=dco/(uint64_t(p0)*p1*p2*5);rec[7]=khz;
+				const uint32_t rates[][2] {{162000,0x06},{216000,0x08},{243000,0x09},{270000,0x0A},{324000,0x0C},{432000,0x10},{540000,0x14},{810000,0x1E}};
+				for(auto &e:rates) {
+					const uint64_t lo=e[0]-e[0]/100,hi=e[0]+e[0]/100;
+					if(khz>=lo && khz<=hi) {rec[8]=e[1];out[2]=static_cast<uint8_t>(e[1]);break;}
+				}
+			}
+		}
+	}
+	rec[9]=out[2];
+	IORegistryEntry::getRegistryRoot()->setProperty("WEXLinkFix",rec,sizeof(rec));
+	return r;
 }
 
 bool XE::wrapAlderLakeNGetOSInformation(IOService *controller) {
