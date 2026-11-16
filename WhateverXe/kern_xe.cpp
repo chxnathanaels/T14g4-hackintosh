@@ -6761,6 +6761,17 @@ static uint32_t d13FirmwareLinkCode(unsigned ddi,uint64_t *rec=nullptr) {
 	return 0;
 }
 
+// Diagnostics for -wexlinkfix: panel power, backlight PWM and DDI A state (read-only).
+static void d13PanelSnapshot(uint32_t where) {
+	auto map=display13FBPower.map;
+	if(!map || !map->getVirtualAddress() || map->getLength()<0x200000)return;
+	auto rd=[&](uint32_t o){return *reinterpret_cast<volatile uint32_t *>(map->getVirtualAddress()+o);};
+	static uint32_t seq;
+	uint32_t v[12] {2,where,++seq,rd(0xC7200),rd(0xC7204),rd(0xC8250),rd(0xC8254),rd(0xC8258),rd(0x64000),rd(0x60400),rd(0x70008),rd(0x45400)};
+	IORegistryEntry::getRegistryRoot()->setProperty("WEXPanelState",v,sizeof(v));
+	if(v[2]<=8){char k[32];snprintf(k,sizeof(k),"WEXPanelState%u",v[2]);IORegistryEntry::getRegistryRoot()->setProperty(k,v,sizeof(v));}
+}
+
 uint32_t XE::wrapD13OptimalLanes(void *port, const void *timing, uint32_t bpp) {
 	uint64_t rec[12] {1,UINT32_MAX,0,0,0,0,0,0,0,0,0,0};
 	auto p=static_cast<uint8_t *>(port);
@@ -6777,6 +6788,7 @@ uint32_t XE::wrapD13OptimalLanes(void *port, const void *timing, uint32_t bpp) {
 	const auto r=FunctionCast(wrapD13OptimalLanes,callbackXE->orgD13OptimalLanes)(port,timing,bpp);
 	if(p)rec[7]=(uint64_t(r)<<32)|Display13FBMemory::field<uint32_t>(p,0x124);
 	IORegistryEntry::getRegistryRoot()->setProperty("WEXLinkFixLanes",rec,sizeof(rec));
+	d13PanelSnapshot(1);
 	return r;
 }
 
@@ -6814,6 +6826,7 @@ uint32_t XE::wrapD13LinkConfig(void *path, void *config) {
 	}
 	rec[9]=out[2];
 	IORegistryEntry::getRegistryRoot()->setProperty("WEXLinkFix",rec,sizeof(rec));
+	d13PanelSnapshot(2);
 	return r;
 }
 
