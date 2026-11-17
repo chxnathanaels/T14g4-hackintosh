@@ -6704,7 +6704,125 @@ bool XE::processDisplay13FramebufferTopology(KernelPatcher &patcher,size_t index
 		{state,wrapAlderLakeNPortState,orgAlderLakeNPortState}
 	};
 	const bool ready=patcher.routeMultipleShort(index,routes,arrsize(routes),address,size);
-	patcher.clearError();return ready;
+	patcher.clearError();
+	// Experimental (-wexlinkfix): AppleIntelDisplayPath::getLinkConfig never fills IOFBDPLinkConfig.bitRate
+	// ("Bringup TODO: implement link rate determination from HW values"). Fill it from the firmware's DPLL.
+	if(ready && checkKernelArgument("-wexlinkfix")) {
+		const char *lc="__ZN21AppleIntelDisplayPath13getLinkConfigEP16IOFBDPLinkConfig";
+		const uint8_t lcEntry[] {0x55,0x48,0x89,0xE5,0x41,0x57,0x41,0x56,0x41,0x55,0x41,0x54,0x53,0x50};
+		const auto lcFn=patcher.solveSymbol<mach_vm_address_t>(index,lc,address,size);patcher.clearError();
+		bool routed=false;
+		if(lcFn==address+0x95B5A && size>0x95C90 && !memcmp(reinterpret_cast<void *>(lcFn),lcEntry,sizeof(lcEntry))) {
+			KernelPatcher::RouteRequest r(lc,wrapD13LinkConfig,orgD13LinkConfig);
+			routed=patcher.routeMultiple(index,&r,1,address,size);patcher.clearError();
+		}
+		IORegistryEntry::getRegistryRoot()->setProperty("WEXLinkFixRouted",routed);
+		// The bandwidth check in setupClocks uses AppleIntelPort::setupOptimalLaneCount, which reads the
+		// port's link-rate code at +0x128 (6/0xA/0xC/0x14/0x1E). Fill it from the firmware DPLL if unset.
+		const char *ol="__ZN14AppleIntelPort21setupOptimalLaneCountEPK29IODetailedTimingInformationV2j";
+		const uint8_t olEntry[] {0x55,0x48,0x89,0xE5,0x48,0xFF,0x05,0x8D,0x75,0x0B,0x00,0x80,0xBF,0x17,0x01,0x00,0x00,0x00};
+		const auto olFn=patcher.solveSymbol<mach_vm_address_t>(index,ol,address,size);patcher.clearError();
+		bool olRouted=false;
+		if(olFn==address+0x1FBD0 && !memcmp(reinterpret_cast<void *>(olFn),olEntry,sizeof(olEntry))) {
+			KernelPatcher::RouteRequest r2(ol,wrapD13OptimalLanes,orgD13OptimalLanes);
+			olRouted=patcher.routeMultiple(index,&r2,1,address,size);patcher.clearError();
+		}
+		IORegistryEntry::getRegistryRoot()->setProperty("WEXLinkFixLanesRouted",olRouted);
+	}
+	return ready;
+}
+
+// Firmware eDP link-rate code (DP LINK_BW) from the DPLL feeding a Combo DDI. 0 if unknown.
+static uint32_t d13FirmwareLinkCode(unsigned ddi,uint64_t *rec=nullptr) {
+	auto map=display13FBPower.map;
+	if(ddi>=2 || !map || !map->getVirtualAddress() || map->getLength()<0x200000)return 0;
+	auto rd=[&](uint32_t o){return *reinterpret_cast<volatile uint32_t *>(map->getVirtualAddress()+o);};
+	const uint32_t clka=rd(0x164280);const unsigned pll=(clka>>(2*ddi))&3;const bool off=(clka>>(10+ddi))&1;
+	const uint32_t dssm=rd(0x51004);const unsigned ri=(dssm>>29)&7;
+	if(rec)rec[0]=clka;
+	if(off || pll>=2 || ri>=3)return 0;
+	const uint32_t c0=rd(0x164284+8*pll),c1=rd(0x164288+8*pll);
+	if(rec){rec[1]=c0;rec[2]=c1;}
+	const uint32_t refs[] {24000,19200,38400};uint64_t ref=refs[ri];if(ref==38400)ref=19200;
+	const uint64_t dco=(c0&0x3FF)*ref+((((c0>>10)&0x7FFF)*ref)>>15);
+	const unsigned pc=(c1>>2)&0xF,kc=(c1>>6)&7,qm=(c1>>9)&1,qr=(c1>>10)&0xFF;
+	const unsigned p0=pc==1?2:pc==2?3:pc==4?5:pc==8?7:0;
+	const unsigned p2=kc==1?1:kc==2?2:kc==4?3:0;
+	const unsigned p1=qm?qr:1;
+	if(!p0 || !p1 || !p2 || !dco)return 0;
+	const uint64_t khz=dco/(uint64_t(p0)*p1*p2*5);if(rec)rec[3]=khz;
+	const uint32_t rates[][2] {{162000,0x06},{216000,0x08},{243000,0x09},{270000,0x0A},{324000,0x0C},{432000,0x10},{540000,0x14},{810000,0x1E}};
+	for(auto &e:rates)if(khz>=e[0]-e[0]/100 && khz<=e[0]+e[0]/100)return e[1];
+	return 0;
+}
+
+// Diagnostics for -wexlinkfix: panel power, backlight PWM and DDI A state (read-only).
+static void d13PanelSnapshot(uint32_t where) {
+	auto map=display13FBPower.map;
+	if(!map || !map->getVirtualAddress() || map->getLength()<0x200000)return;
+	auto rd=[&](uint32_t o){return *reinterpret_cast<volatile uint32_t *>(map->getVirtualAddress()+o);};
+	static uint32_t seq;
+	uint32_t v[12] {2,where,++seq,rd(0xC7200),rd(0xC7204),rd(0xC8250),rd(0xC8254),rd(0xC8258),rd(0x64000),rd(0x60400),rd(0x70008),rd(0x45400)};
+	IORegistryEntry::getRegistryRoot()->setProperty("WEXPanelState",v,sizeof(v));
+	if(v[2]<=8){char k[32];snprintf(k,sizeof(k),"WEXPanelState%u",v[2]);IORegistryEntry::getRegistryRoot()->setProperty(k,v,sizeof(v));}
+}
+
+uint32_t XE::wrapD13OptimalLanes(void *port, const void *timing, uint32_t bpp) {
+	uint64_t rec[12] {1,UINT32_MAX,0,0,0,0,0,0,0,0,0,0};
+	auto p=static_cast<uint8_t *>(port);
+	auto cfgp=p ? Display13FBMemory::field<uint32_t *>(p,0x548) : nullptr;
+	const unsigned ddi=cfgp ? cfgp[0] : UINT32_MAX;rec[1]=ddi;
+	if(p) {rec[2]=Display13FBMemory::field<uint32_t>(p,0x128);rec[3]=Display13FBMemory::field<uint32_t>(p,0x124);rec[4]=p[0x117];rec[5]=p[0x11];}
+	if(p && ddi<2 && (callbackXE->adlnOutputWiring.panel&(1U<<ddi))) {
+		const auto cur=Display13FBMemory::field<uint32_t>(p,0x128);
+		if(cur!=0x06 && cur!=0x0A && cur!=0x0C && cur!=0x14 && cur!=0x1E) {
+			const auto code=d13FirmwareLinkCode(ddi,rec+8);rec[6]=code;
+			if(code==0x06 || code==0x0A || code==0x0C || code==0x14 || code==0x1E)memcpy(p+0x128,&code,sizeof(code));
+		}
+	}
+	const auto r=FunctionCast(wrapD13OptimalLanes,callbackXE->orgD13OptimalLanes)(port,timing,bpp);
+	if(p)rec[7]=(uint64_t(r)<<32)|Display13FBMemory::field<uint32_t>(p,0x124);
+	IORegistryEntry::getRegistryRoot()->setProperty("WEXLinkFixLanes",rec,sizeof(rec));
+	d13PanelSnapshot(1);
+	return r;
+}
+
+uint32_t XE::wrapD13LinkConfig(void *path, void *config) {
+	const auto r=FunctionCast(wrapD13LinkConfig,callbackXE->orgD13LinkConfig)(path,config);
+	if(!path || !config)return r;
+	auto out=static_cast<uint8_t *>(config);
+	uint64_t rec[10] {2,out[2],UINT32_MAX,0,0,0,0,0,0,0};
+	auto port=Display13FBMemory::field<uint8_t *>(path,0x3648);
+	auto cfgp=port ? Display13FBMemory::field<uint32_t *>(port,0x548) : nullptr;
+	const unsigned ddi=cfgp ? cfgp[0] : UINT32_MAX;rec[2]=ddi;
+	auto map=display13FBPower.map;
+	if(ddi<2 && (callbackXE->adlnOutputWiring.panel&(1U<<ddi)) && map && map->getVirtualAddress() && map->getLength()>=0x200000) {
+		auto rd=[&](uint32_t o){return *reinterpret_cast<volatile uint32_t *>(map->getVirtualAddress()+o);};
+		const uint32_t clka=rd(0x164280);rec[3]=clka;
+		const unsigned pll=(clka>>(2*ddi))&3;const bool off=(clka>>(10+ddi))&1;
+		const uint32_t dssm=rd(0x51004);const unsigned ri=(dssm>>29)&7;
+		if(!off && pll<2 && ri<3) {
+			const uint32_t c0=rd(0x164284+8*pll),c1=rd(0x164288+8*pll);rec[4]=c0;rec[5]=c1;
+			const uint32_t refs[] {24000,19200,38400};uint64_t ref=refs[ri];if(ref==38400)ref=19200;
+			const uint64_t dco=(c0&0x3FF)*ref+((((c0>>10)&0x7FFF)*ref)>>15);rec[6]=dco;
+			const unsigned pc=(c1>>2)&0xF,kc=(c1>>6)&7,qm=(c1>>9)&1,qr=(c1>>10)&0xFF;
+			const unsigned p0=pc==1?2:pc==2?3:pc==4?5:pc==8?7:0;
+			const unsigned p2=kc==1?1:kc==2?2:kc==4?3:0;
+			const unsigned p1=qm?qr:1;
+			if(p0 && p1 && p2 && dco) {
+				const uint64_t khz=dco/(uint64_t(p0)*p1*p2*5);rec[7]=khz;
+				const uint32_t rates[][2] {{162000,0x06},{216000,0x08},{243000,0x09},{270000,0x0A},{324000,0x0C},{432000,0x10},{540000,0x14},{810000,0x1E}};
+				for(auto &e:rates) {
+					const uint64_t lo=e[0]-e[0]/100,hi=e[0]+e[0]/100;
+					if(khz>=lo && khz<=hi) {rec[8]=e[1];out[2]=static_cast<uint8_t>(e[1]);break;}
+				}
+			}
+		}
+	}
+	rec[9]=out[2];
+	IORegistryEntry::getRegistryRoot()->setProperty("WEXLinkFix",rec,sizeof(rec));
+	d13PanelSnapshot(2);
+	return r;
 }
 
 bool XE::wrapAlderLakeNGetOSInformation(IOService *controller) {
@@ -9241,6 +9359,17 @@ void XE::adlnSetDualClock(IOService *controller,uint64_t nativeHz) {
             evidence[7]=reinterpret_cast<bool (*)(const IOWorkLoop *)>(callbackXE->adlnWorkLoopInGate)(loop);
             if(!evidence[7]) {
                 ready=reinterpret_cast<bool (*)(IOWorkLoop *)>(callbackXE->adlnWorkLoopTryClose)(loop);
+                // Experimental (-wexgateretry): the work loop may be briefly busy. Retry for up to
+                // ~80 ms, dropping our own lock while waiting so the gate holder can progress.
+                // State is re-validated below (controller/loop/active pipes) before any clock write.
+                if(!ready && checkKernelArgument("-wexgateretry")) {
+                    for(unsigned i=0;i<40 && !ready;++i) {
+                        IOLockUnlock(c.lock);IOSleep(2);IOLockLock(c.lock);
+                        evidence[27]=i+1;
+                        if(loop!=c.workLoop || controller!=c.controller || c.bridge.state.faulted || c.clockFaulted)break;
+                        ready=reinterpret_cast<bool (*)(IOWorkLoop *)>(callbackXE->adlnWorkLoopTryClose)(loop);
+                    }
+                }
                 if(ready) {acquired=loop;evidence[8]=1;}
             }
         }
