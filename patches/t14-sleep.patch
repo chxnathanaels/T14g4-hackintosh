@@ -1,0 +1,97 @@
+diff --git a/NootedGreen/kern_gen11.cpp b/NootedGreen/kern_gen11.cpp
+index e309fcf..39c0b46 100755
+--- a/NootedGreen/kern_gen11.cpp
++++ b/NootedGreen/kern_gen11.cpp
+@@ -246,6 +246,36 @@ static bool isV80LEnforcerEnabled() {
+ 	return checkKernelArgument("-ngreenv80l");
+ }
+ 
++// T14G4 sleep build: XE-FWSNAP (ported from the X1 Carbon G11 fork).
++// Read the firmware-trained TRANS_DDI_FUNC_CTL_A and PP_CONTROL once, before anything writes them, and
++// reuse those values instead of the XPS literals (0x8A000106 = 4 lanes; T14 trains 2 lanes).
++// Override: ngreenddifunc=0xVALUE.
++static uint32_t gXeFwDdiFuncA = 0;   // 0x60400
++static uint32_t gXeFwPpControl = 0;  // 0xC7204
++static void xeFwSnapshot() {
++	if (!NGreen::callback || NGreen::callback->getIsRealTGL()) return;
++	if (!gXeFwDdiFuncA) {
++		uint32_t v = NGreen::callback->readReg32(0x60400);
++		if (v & 0x80000000u) {
++			gXeFwDdiFuncA = v;
++			SYSLOG("ngreen", "XE-FWSNAP: TRANS_DDI_FUNC_CTL_A=0x%x (lanes=%u)", v, ((v >> 1) & 0x7u) + 1);
++		}
++	}
++	if (!gXeFwPpControl) {
++		uint32_t v = NGreen::callback->readReg32(0xC7204);
++		if (v) {
++			gXeFwPpControl = v;
++			SYSLOG("ngreen", "XE-FWSNAP: PP_CONTROL=0x%x", v);
++		}
++	}
++}
++static uint32_t xeDdiFuncA() {
++	static int ddiArg = -1; static uint32_t ddiOv = 0;
++	if (ddiArg < 0) { ddiArg = 0; if (PE_parse_boot_argn("ngreenddifunc", &ddiOv, sizeof(ddiOv)) && ddiOv) ddiArg = 1; }
++	xeFwSnapshot();
++	return ddiArg == 1 ? ddiOv : (gXeFwDdiFuncA ? gXeFwDdiFuncA : 0x8A000106u);
++}
++
+ static uint32_t getV65Tier1WantBits(bool isRealTGL) {
+ 	// Real TGL: always use native behavior (RCS + BCS).
+ 	if (isRealTGL) {
+@@ -549,6 +579,8 @@ bool Gen11::processKext(KernelPatcher &patcher, size_t index, mach_vm_address_t
+ 			{"__ZN31AppleIntelRegisterAccessManager15WriteRegister32EPVvmj",raWriteRegister32b},
+ 			// V410: hook sleep/wake transition methods to intercept panel state tracking.
+ 			// Apple's implementations are known to corrupt WS state on RPL/ADL on resume.
++			// T14G4 sleep build: hwSaveNVRAM calls a vtable slot that is reserved on Tahoe -> panic on sleep entry.
++			{"__ZN24AppleIntelBaseController11hwSaveNVRAMEv", NGreen::wrapFunctionReturnZero},
+ 			{"__ZN21AppleIntelFramebuffer17prepareToExitWakeEv",   prepareToExitWake,   this->oprepareToExitWake},
+ 			{"__ZN21AppleIntelFramebuffer18prepareToEnterWakeEv",  prepareToEnterWake,  this->oprepareToEnterWake},
+ 			{"__ZN21AppleIntelFramebuffer18prepareToExitSleepEv",  prepareToExitSleep,  this->oprepareToExitSleep},
+@@ -3152,6 +3184,7 @@ int Gen11::handleLinkIntegrityCheck()
+ void Gen11::hwInitializeCState(AppleIntel::AppleIntelBaseController *that)
+ {
+ 	SYSLOG("ngreen", "NB-BUILD-V50-ALLOW-METAL");
++	xeFwSnapshot();   // XE-FWSNAP: before any write
+ 
+ 	int origB48 = getMember<int>(that, 0xB48);
+ 	int origCE4 = getMember<int>(that, 0xCE4);
+@@ -3336,7 +3369,7 @@ void Gen11::hwInitializeCState(AppleIntel::AppleIntelBaseController *that)
+ 		// Pre-matches Apple's target so paramsFbCompare sees no lane-count change; changing
+ 		// lane count in TRANS_DDI_FUNC_CTL while transcoder is live resets the DDI buffer
+ 		// and drops the trained link.
+-		NGreen::callback->writeReg32(0x60400, 0x8A000106); // TRANS_DDI_FUNC_CTL_A
++		NGreen::callback->writeReg32(0x60400, xeDdiFuncA()); // TRANS_DDI_FUNC_CTL_A (XE-FWSNAP)
+ 		NGreen::callback->writeReg32(0x60000, 0x0A9F09FF); // TRANS_HTOTAL_A
+ 		NGreen::callback->writeReg32(0x60004, 0x0A9F09FF); // TRANS_HBLANK_A
+ 		NGreen::callback->writeReg32(0x60008, 0x0A4F0A2F); // TRANS_HSYNC_A
+@@ -3355,7 +3388,7 @@ void Gen11::hwInitializeCState(AppleIntel::AppleIntelBaseController *that)
+ 		// Values from Linux intel_reg dump on this hardware:
+ 		//   0xC7204 (PP_CONTROL)   = 0x00000067 (panel on, VDD on, power-on target)
+ 		//   0xC7208 (PP_ON_DELAYS) = 0x07D00001 (T1=1, T3=2000ms power-on delays)
+-		NGreen::callback->writeReg32(0xC7204, 0x00000067); // PP_CONTROL
++		NGreen::callback->writeReg32(0xC7204, gXeFwPpControl ? gXeFwPpControl : 0x00000067); // PP_CONTROL (XE-FWSNAP)
+ 		NGreen::callback->writeReg32(0xC7208, 0x07D00001); // PP_ON_DELAYS
+ 
+ 		// PIPE_CLK_SEL_A (0x46140 = 0x10000000) REMOVED after the EFI re-import caused
+@@ -3492,7 +3525,7 @@ void NGreen::adlpDcExit(const char *caller) {
+ 	writeReg32(0x8F03C, 0xC003B300u);
+ 	writeReg32(0x8F00C, 0x571056C0u);
+ 	// 4. Restore panel power sequencer.
+-	writeReg32(0xC7204, 0x67u);  // PP_CONTROL
++	writeReg32(0xC7204, gXeFwPpControl ? gXeFwPpControl : 0x67u);  // PP_CONTROL (XE-FWSNAP)
+ 	// 5. Disable PSR — DMC may have re-enabled it on DC exit.
+ 	writeReg32(0x60800, 0u);   // EDP_PSR_CTL (TGL)
+ 	writeReg32(0x60A10, 0u);   // EDP_PSR2_CTL (TGL)
+@@ -9809,8 +9842,9 @@ int Gen11::hwSetMode
+ 	// (2-lane DP SST). Write the correct value NOW so paramsFbCompare sees no lane-count change
+ 	// needed and leaves DDI_BUF_CTL_A alone — preserving the UEFI-trained 4-lane eDP link.
+ 	if (!NGreen::callback->isRealTGL) {
+-		NGreen::callback->writeReg32(0x60400, 0x8A000106);  // TRANS_DDI_FUNC_CTL_A
+-		DBGLOG("ngreen", "hwSetMode: pre-write TRANS_DDI_FUNC_CTL_A=0x8A000106 to prevent paramsFbCompare lane reprog");
++		uint32_t v = xeDdiFuncA();
++		NGreen::callback->writeReg32(0x60400, v);  // TRANS_DDI_FUNC_CTL_A (XE-FWSNAP)
++		DBGLOG("ngreen", "hwSetMode: pre-write TRANS_DDI_FUNC_CTL_A=0x%x", v);
+ 	}
+ 	auto ret= FunctionCast(hwSetMode, callback->ohwSetMode)(that, param_1, param_2, param_3);
+ 	if (hw)

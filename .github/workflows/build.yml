@@ -1,0 +1,35 @@
+name: Build NootedGreen (T14G4 sleep)
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source + deps
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          git clone https://github.com/sgiammori/NootedGreen.git ng
+          cd ng && git checkout 95f81898be65cb9f7b3d370ca78054be4cc8a62d
+          git apply ../patches/t14-sleep.patch
+          rm -rf MacKernelSDK Lilu.kext
+          git clone --depth 1 https://github.com/acidanthera/MacKernelSDK MacKernelSDK
+          gh release download 1.7.3 -R acidanthera/Lilu -p '*DEBUG.zip' -D /tmp/lilu
+          unzip -q /tmp/lilu/*.zip -d /tmp/lilu && cp -R /tmp/lilu/Lilu.kext .
+          ls Lilu.kext/Contents/Resources
+      - name: Build
+        run: |
+          cd ng
+          xcodebuild -project NootedGreen.xcodeproj -configuration Release -arch x86_64 \
+            CONFIGURATION_BUILD_DIR="$PWD/build" CODE_SIGNING_ALLOWED=NO build | tail -30
+          ls build
+      - name: Commit binaries back
+        run: |
+          mkdir -p out && rm -rf out/*
+          cp -R ng/build/NootedGreen.kext out/
+          strings -a out/NootedGreen.kext/Contents/MacOS/NootedGreen | grep -c "XE-FWSNAP"
+          git config user.name ci && git config user.email ci@users.noreply.github.com
+          git add -f out && git commit -m "Built kext [skip ci]" && git push
