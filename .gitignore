@@ -3,6 +3,3 @@ Lilu.kext
 MacKernelSDK
 __pycache__/
 .DS_Store
-MacKernelSDK/
-Lilu.kext/
-build/
