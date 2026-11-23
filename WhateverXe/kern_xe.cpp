@@ -15458,7 +15458,38 @@ bool tglCSBSerialize(void *,void *,OSSerialize *serializer) {
 }
 }
 
+// T14G4 Deep Idle wake (ported from rodgod-rr/WhateverXe g15-deep-idle, kern_xe.cpp, 08-09 Nov):
+// in S0 Deep Idle the GPU keeps its state. The stock wake path treats wake as a reset, so the CSB
+// read head is forced to 11 while the hardware write pointer has moved on -> EL-null panics.
+//  - between IntelAccelerator::systemWillSleep and resetOnWake, CSB events are dropped (stale HWS);
+//  - on resetOnWake: re-enable the 12-entry CSB mode bit (GFX_MODE bit 3) if it was lost, restore Apple's
+//    active execlist index (streamer+0x50) saved at sleep, and realign the read head to the hardware write
+//    pointer when it is valid and matches the HWS copy; otherwise initialize as before.
+// Off: -wexwakeresync-off.
+static mach_vm_address_t t14OrgWillSleep=0;
+static volatile uint32_t t14GpuAsleep=0;
+static uint32_t t14ActiveIdx[6][3];
+static uint32_t t14WakeStats[6][6];
+static int t14WakeOff=-1;
+static bool t14WakeDisabled(){if(t14WakeOff<0)t14WakeOff=checkKernelArgument("-wexwakeresync-off");return t14WakeOff;}
+static uint64_t t14WrapWillSleep(void *acc) {
+ const auto r=reinterpret_cast<uint64_t (*)(void *)>(t14OrgWillSleep)(acc);
+ if(!t14WakeDisabled()) {
+  for(unsigned e=0;e<6;++e)if(tglCSBEngines[e].streamer && tglCSBEngines[e].hardwareReady) {
+   TGLCSBIO io(tglCSBEngines[e].streamer,0);if(io.engine>=6)continue;
+   t14ActiveIdx[io.engine][0]=1;t14ActiveIdx[io.engine][1]=*reinterpret_cast<uint32_t *>(io.streamer+0x50);
+  }
+  t14GpuAsleep=0xFFFFFFFF;
+ }
+ return r;
+}
+
 bool XE::installTGLCSB12(KernelPatcher &patcher,size_t index,mach_vm_address_t address,size_t size) {
+ {
+  KernelPatcher::RouteRequest t14r[] {{"__ZN16IntelAccelerator15systemWillSleepEv",t14WrapWillSleep,t14OrgWillSleep}};
+  const bool t14ok=patcher.routeMultiple(index,t14r,1,address,size);patcher.clearError();
+  IORegistryEntry::getRegistryRoot()->setProperty("T14WakeHookReady",t14ok);
+ }
  KernelPatcher::RouteRequest routes[] {
   {"__ZN26IGHardwareCommandStreamer54initEP22IOGraphicsAccelerator2P10IOWorkLoopP12IGScheduler510IGHwCsType",wrapTGLCSBInit,orgTGLCSBInit},
   {"__ZN26IGHardwareCommandStreamer511resetOnWakeEv",wrapTGLCSBWake,orgTGLCSBWake},
@@ -15557,13 +15588,38 @@ bool XE::wrapTGLCSBInit(void *streamer,void *owner,void *loop,void *scheduler,un
  }
  return ok;
 }
-void XE::wrapTGLCSBWake(void *streamer) { tglCSBInitialize(streamer); }
+void XE::wrapTGLCSBWake(void *streamer) {
+ if(t14WakeDisabled()){tglCSBInitialize(streamer);return;}
+ TGLCSBIO io(streamer,0);io.acquire();
+ const unsigned eng=io.engine;
+ if(eng<6) {
+  auto st=t14WakeStats[eng];st[0]++;
+  // Restore Apple's active execlist index from before sleep (the GPU kept its own).
+  if(t14ActiveIdx[eng][0] && t14ActiveIdx[eng][1]<2)*reinterpret_cast<uint32_t *>(io.streamer+0x50)=t14ActiveIdx[eng][1];
+  // GFX_MODE bit 3 (12-entry CSB) is set only at boot; re-enable with the same masked write if lost.
+  auto mode=reinterpret_cast<volatile uint32_t *>(io.bar+io.modeReg);
+  const uint32_t before=*mode;st[1]=before;
+  if(before!=~0U && !(before&8)){*mode=0x00080008;(void)*mode;}
+  const uint32_t ptr=*reinterpret_cast<volatile uint32_t *>(io.bar+io.pointerReg),wp=ptr&0xF;
+  const uint32_t hwsTail=*reinterpret_cast<volatile uint32_t *>(io.hwsp+0xBC);
+  st[2]=ptr;st[3]=hwsTail;
+  auto &e=tglCSBEngines[eng];
+  const bool keep=wp<TGLCSB::Capacity && hwsTail==wp && e.streamer==streamer && e.hardwareReady;
+  st[4]=keep;
+  if(keep){e.state.head=wp;e.state.error=TGLCSB::Error::None;*reinterpret_cast<uint32_t *>(io.streamer+0x1C04)=wp;++e.resets;}
+  else tglCSBInitialize(streamer);
+  __sync_fetch_and_and(&t14GpuAsleep,~(1U<<eng));
+ } else tglCSBInitialize(streamer);
+ IORegistryEntry::getRegistryRoot()->setProperty("T14WakeResync",t14WakeStats,sizeof(t14WakeStats));
+}
 void XE::wrapTGLCSBReset(void *streamer) {
  tglCSBInitialize(streamer);
  FunctionCast(wrapTGLCSBReset,callbackXE->orgTGLCSBReset)(streamer);
 }
 void XE::wrapTGLCSBProcess(void *streamer,uint32_t flags) {
- TGLCSBIO io(streamer,flags);auto &engine=tglCSBEngines[io.engine];
+ TGLCSBIO io(streamer,flags);
+ if(io.engine<6 && (t14GpuAsleep&(1U<<io.engine))){if(io.engine<6)t14WakeStats[io.engine][5]++;return;}
+ auto &engine=tglCSBEngines[io.engine];
  if (engine.streamer!=streamer ||
   *reinterpret_cast<uint32_t *>(io.streamer+0x1C04)!=engine.state.head)
   PANIC("igfx","CSB12 native/software head mismatch e=%u",io.engine);
