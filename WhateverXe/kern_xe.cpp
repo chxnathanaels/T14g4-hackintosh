@@ -1,5 +1,6 @@
 #include "kern_display13_color.hpp"
 #include <mach/clock.h>
+#include <kern/thread_call.h>
 #include <IOKit/IOMessage.h>
 #include <IOKit/graphics/IOGraphicsTypes.h>
 //
@@ -8171,7 +8172,81 @@ void XE::wrapAlderLakeNGamma10(void *path,void *transaction,uint32_t control) {
     if(slot)__sync_lock_test_and_set(&slot->thread,0);
 }
 
+// T14G4: optional backlight smoother (wexblsmooth=1). macOS writes each brightness step
+// to the PCH PWM duty register (0xC8258) in one jump. Ramp to the new duty in small steps
+// from a thread call, so the display workloop is never blocked. Off / on transitions
+// (duty 0) pass straight through. wexblsteps=N (default 24), wexblint=ms (default 6).
+namespace {
+struct BLSmooth {
+    bool parsed {},enabled {};
+    uint32_t steps {24},interval {6};
+    thread_call_t call {};
+    void *access {};
+    volatile uint32_t target {},current {};
+    volatile uint32_t running {},generation {};
+};
+BLSmooth blSmooth;
+void (*blSmoothOrgWrite)(void *,uint64_t,uint32_t) {};
+}
+static void blSmoothParse() {
+    if(blSmooth.parsed)return;
+    blSmooth.parsed=true;
+    uint32_t v=0;
+    if(PE_parse_boot_argn("wexblsmooth",&v,sizeof(v)) && v)blSmooth.enabled=true;
+    if(PE_parse_boot_argn("wexblsteps",&v,sizeof(v)) && v>=2 && v<=200)blSmooth.steps=v;
+    if(PE_parse_boot_argn("wexblint",&v,sizeof(v)) && v>=1 && v<=50)blSmooth.interval=v;
+}
+static void blSmoothWorker(thread_call_param_t,thread_call_param_t) {
+    for(unsigned guard=0;guard<4000;++guard) {
+        const uint32_t gen=__atomic_load_n(&blSmooth.generation,__ATOMIC_ACQUIRE);
+        const uint32_t target=__atomic_load_n(&blSmooth.target,__ATOMIC_ACQUIRE);
+        uint32_t cur=__atomic_load_n(&blSmooth.current,__ATOMIC_ACQUIRE);
+        if(cur==target || !blSmooth.access)break;
+        const uint32_t diff=cur>target?cur-target:target-cur;
+        uint32_t step=diff/blSmooth.steps;if(!step)step=1;
+        // Step size is fixed per target; recompute when a new target arrives.
+        static uint32_t stepFor=UINT32_MAX,stepSize=1;
+        if(stepFor!=gen){stepFor=gen;stepSize=step;}
+        uint32_t next=cur>target?(cur-target>stepSize?cur-stepSize:target):(target-cur>stepSize?cur+stepSize:target);
+        if(!blSmoothOrgWrite)break;
+        blSmoothOrgWrite(blSmooth.access,0xC8258,next);
+        __atomic_store_n(&blSmooth.current,next,__ATOMIC_RELEASE);
+        IOSleep(blSmooth.interval);
+    }
+    __atomic_store_n(&blSmooth.running,0U,__ATOMIC_RELEASE);
+    // A target that changed after the last check restarts the ramp.
+    if(__atomic_load_n(&blSmooth.current,__ATOMIC_ACQUIRE)!=__atomic_load_n(&blSmooth.target,__ATOMIC_ACQUIRE) &&
+       !__atomic_exchange_n(&blSmooth.running,1U,__ATOMIC_ACQ_REL))thread_call_enter(blSmooth.call);
+}
+// Returns true when the write was taken over by the smoother.
+static bool blSmoothWrite(void *access,uint32_t value) {
+    blSmoothParse();
+    if(!blSmooth.enabled || !access)return false;
+    if(!blSmooth.call) {
+        blSmooth.call=thread_call_allocate(blSmoothWorker,nullptr);
+        if(!blSmooth.call){blSmooth.enabled=false;return false;}
+        IORegistryEntry::getRegistryRoot()->setProperty("WEXBacklightSmoother",true);
+    }
+    const uint32_t cur=__atomic_load_n(&blSmooth.current,__ATOMIC_ACQUIRE);
+    if(!value || !cur || access!=blSmooth.access) {
+        // Panel off/on or first write: no ramp. Let any running ramp end at this value.
+        blSmooth.access=access;
+        __atomic_store_n(&blSmooth.target,value,__ATOMIC_RELEASE);
+        __atomic_store_n(&blSmooth.current,value,__ATOMIC_RELEASE);
+        __atomic_add_fetch(&blSmooth.generation,1U,__ATOMIC_ACQ_REL);
+        return false;
+    }
+    __atomic_store_n(&blSmooth.target,value,__ATOMIC_RELEASE);
+    __atomic_add_fetch(&blSmooth.generation,1U,__ATOMIC_ACQ_REL);
+    if(!__atomic_exchange_n(&blSmooth.running,1U,__ATOMIC_ACQ_REL))thread_call_enter(blSmooth.call);
+    return true;
+}
+
 void XE::wrapDisplay13GMBusWrite(void *access,uint64_t reg,uint32_t value) {
+    if(reg==0xC8258) {
+        if(!blSmoothOrgWrite)blSmoothOrgWrite=reinterpret_cast<void (*)(void *,uint64_t,uint32_t)>(callbackXE->orgDisplay13GMBusWrite);
+        if(blSmoothWrite(access,value))return;
+    }
     if(display13DeferClock(access,reg,value,reinterpret_cast<uintptr_t>(__builtin_return_address(0))))return;
     // DISPLAY13_COMBO_FRACTION: qualified nominal writer, physical reference,
     // retained controller/manager. No MMIO or other port's PLL inference.
