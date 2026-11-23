@@ -2,6 +2,8 @@
 #include <mach/clock.h>
 #include <kern/thread_call.h>
 #include <IOKit/IOMessage.h>
+#include <IOKit/acpi/IOACPIPlatformDevice.h>
+#include <IOKit/pwr_mgt/RootDomain.h>
 #include <IOKit/graphics/IOGraphicsTypes.h>
 //
 //  kern_xe.cpp
@@ -3863,7 +3865,53 @@ extern "C" __attribute__((naked, used)) void tglGuCDMAWriteBridge() {
 		"jmpq *_tglGuCDMAWriteResume(%rip)\n");
 }
 
+// T14G4 (wexecnt=1): tell the ThinkPad EC about Deep Idle the way Windows' Modern Standby does.
+// The DSDT's LPS0 _DSM (PEPD) calls EC.ECNT: display off -> ECNT(1) (standby LED), sleep entry -> ECNT(3)
+// (ESLP=1, EC sleep mode), sleep exit -> ECNT(2), display on -> ECNT(0). macOS never calls that _DSM, so
+// the EC stays "entering sleep" (fast-blinking LED) and keeps raising events that wake Deep Idle at once.
+namespace {
+IOACPIPlatformDevice *t14EC {};
+IONotifier *t14ECNotifier {},*t14SleepNotifier {};
+uint32_t t14ECNTCalls[4] {};
+}
+static void t14ECNT(uint32_t arg) {
+    if(!t14EC || arg>3)return;
+    auto n=OSNumber::withNumber(arg,32);if(!n)return;
+    OSObject *params[] {n};OSObject *result=nullptr;
+    const auto r=t14EC->evaluateObject("ECNT",&result,params,1);
+    n->release();if(result)result->release();
+    if(r==kIOReturnSuccess)t14ECNTCalls[arg]++;
+    IORegistryEntry::getRegistryRoot()->setProperty("T14ECNT",t14ECNTCalls,sizeof(t14ECNTCalls));
+}
+static IOReturn t14SleepHandler(void *,void *,UInt32 type,IOService *,void *,vm_size_t) {
+    switch(type) {
+        case kIOMessageSystemWillSleep: t14ECNT(1);t14ECNT(3);break;
+        case kIOMessageSystemWillPowerOn: t14ECNT(2);break;
+        case kIOMessageSystemHasPoweredOn: t14ECNT(0);break;
+        default: break;
+    }
+    return kIOReturnSuccess;
+}
+static bool t14ECPublished(void *,void *,IOService *service,IONotifier *) {
+    if(t14EC)return true;
+    auto dev=OSDynamicCast(IOACPIPlatformDevice,service);
+    if(!dev || dev->validateObject("ECNT")!=kIOReturnSuccess)return true;
+    dev->retain();t14EC=dev;
+    t14SleepNotifier=registerPrioritySleepWakeInterest(t14SleepHandler,nullptr,nullptr);
+    IORegistryEntry::getRegistryRoot()->setProperty("T14ECStandby",t14SleepNotifier!=nullptr);
+    return true;
+}
+
 void XE::init() {
+    {
+        uint32_t ec=0;
+        if(PE_parse_boot_argn("wexecnt",&ec,sizeof(ec)) && ec) {
+            if(auto m=IOService::nameMatching("PNP0C09")) {
+                t14ECNotifier=IOService::addMatchingNotification(gIOFirstPublishNotification,m,t14ECPublished,nullptr,nullptr,0);
+                m->release();
+            }
+        }
+    }
     callbackXE = this;
     // Register notifications before Lilu closes registration. Actual family
     // selection waits for published PCI config space in processKernel.
