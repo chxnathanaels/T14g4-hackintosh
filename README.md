@@ -7,7 +7,7 @@ OpenCore EFI for the **Lenovo ThinkPad T14 Gen 4 (Intel, 13th gen)** running **m
 > [!WARNING]
 > Experimental. Keep a backup EFI on a USB stick. Tested on build **25G241** only.
 >
-> The previous NootedGreen-based EFI is kept at the tag
+> The previous NootedGreen-based EFI is kept on the branch
 > [`nootedgreen-final`](https://github.com/chxnathanaels/T14g4-hackintosh/tree/nootedgreen-final).
 
 ![Desktop](docs/screenshots/desktop.png)
