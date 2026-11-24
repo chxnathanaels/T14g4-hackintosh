@@ -4,10 +4,11 @@
  * so a wrong guess about the DSDT is skipped instead of breaking the table.
  *  - AWAC/RTC: STAS=1 so the legacy RTC is used (macOS has no AWAC driver)
  *  - USBX: USB port power properties
- *  - MCHC + SBUS/BUS0: memory controller and SMBus devices macOS expects
+ *  - SBUS/BUS0: SMBus device macOS expects (MCHC dropped: Lenovo already has MC at the same address)
+ *  - EC RE1B/RECB/WE1B/WECB: EC access for YogaSMC fan sensor
  *  - PNLF: backlight device for the internal panel
  */
-DefinitionBlock ("", "SSDT", 2, "T14G4", "T14FIX", 0x00001000)
+DefinitionBlock ("", "SSDT", 2, "T14G4", "T14FIX", 0x00002000)
 {
     External (STAS, IntObj)
     External (_SB_.PC00, DeviceObj)
@@ -16,8 +17,7 @@ DefinitionBlock ("", "SSDT", 2, "T14G4", "T14FIX", 0x00001000)
     External (_SB_.PCI0.SBUS, DeviceObj)
     External (_SB_.PC00.GFX0, DeviceObj)
     External (_SB_.PCI0.GFX0, DeviceObj)
-    External (_SB_.PC00.MCHC, DeviceObj)
-    External (_SB_.PCI0.MCHC, DeviceObj)
+    External (_SB_.PC00.LPCB.EC__, DeviceObj)
 
     Scope (\_SB)
     {
@@ -55,38 +55,49 @@ DefinitionBlock ("", "SSDT", 2, "T14G4", "T14FIX", 0x00001000)
         }
     }
 
-    If (CondRefOf (\_SB.PC00))
+    /* EC byte access for YogaSMC (fan RPM sensor, fan control). Same methods as YogaSMC's SSDT-ECRW sample. */
+    If (CondRefOf (\_SB.PC00.LPCB.EC))
     {
-        If (!CondRefOf (\_SB.PC00.MCHC))
+        Scope (\_SB.PC00.LPCB.EC)
         {
-            Scope (\_SB.PC00)
+            Method (RE1B, 1, NotSerialized)
             {
-                Device (MCHC)
-                {
-                    Name (_ADR, Zero)
-                    Method (_STA, 0, NotSerialized)
-                    {
-                        If (_OSI ("Darwin")) { Return (0x0F) }
-                        Return (Zero)
-                    }
-                }
+                OperationRegion (ERAM, EmbeddedControl, Arg0, One)
+                Field (ERAM, ByteAcc, NoLock, Preserve) { BYTE, 8 }
+                Return (BYTE)
             }
-        }
-    }
-    ElseIf (CondRefOf (\_SB.PCI0))
-    {
-        If (!CondRefOf (\_SB.PCI0.MCHC))
-        {
-            Scope (\_SB.PCI0)
+            Method (RECB, 2, Serialized)
             {
-                Device (MCHC)
+                Arg1 = ((Arg1 + 0x07) >> 0x03)
+                Name (TEMP, Buffer (Arg1) {})
+                Arg1 += Arg0
+                Local0 = Zero
+                While ((Arg0 < Arg1))
                 {
-                    Name (_ADR, Zero)
-                    Method (_STA, 0, NotSerialized)
-                    {
-                        If (_OSI ("Darwin")) { Return (0x0F) }
-                        Return (Zero)
-                    }
+                    TEMP [Local0] = RE1B (Arg0)
+                    Arg0++
+                    Local0++
+                }
+                Return (TEMP)
+            }
+            Method (WE1B, 2, NotSerialized)
+            {
+                OperationRegion (ERAM, EmbeddedControl, Arg0, One)
+                Field (ERAM, ByteAcc, NoLock, Preserve) { BYTE, 8 }
+                BYTE = Arg1
+            }
+            Method (WECB, 3, Serialized)
+            {
+                Arg1 = ((Arg1 + 0x07) >> 0x03)
+                Name (TEMP, Buffer (Arg1) {})
+                TEMP = Arg2
+                Arg1 += Arg0
+                Local0 = Zero
+                While ((Arg0 < Arg1))
+                {
+                    WE1B (Arg0, DerefOf (TEMP [Local0]))
+                    Arg0++
+                    Local0++
                 }
             }
         }

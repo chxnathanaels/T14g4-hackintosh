@@ -38,6 +38,22 @@
 				<key>Path</key>
 				<string>SSDT-USB-Reset.aml</string>
 			</dict>
+			<dict>
+				<key>Comment</key>
+				<string>Deep Idle S0 sleep (LPS0/LXEN)</string>
+				<key>Enabled</key>
+				<false/>
+				<key>Path</key>
+				<string>SSDT-DeepIdle.aml</string>
+			</dict>
+			<dict>
+				<key>Comment</key>
+				<string>Lid/power button wake from Deep Idle (PRW0 -&gt; EC GPE 0x6E)</string>
+				<key>Enabled</key>
+				<false/>
+				<key>Path</key>
+				<string>SSDT-LIDWAKE.aml</string>
+			</dict>
 		</array>
 		<key>Delete</key>
 		<array/>
@@ -196,11 +212,13 @@
 			</dict>
 			<key>PciRoot(0x0)/Pci(0x2,0x0)</key>
 			<dict>
-				<key>AAPL,slot-name</key>
-				<string>built-in</string>
-				<key>built-in</key>
+				<key>framebuffer-patch-enable</key>
 				<data>
-				AA==
+				AQAAAA==
+				</data>
+				<key>framebuffer-stolenmem</key>
+				<data>
+				AADAAw==
 				</data>
 			</dict>
 		</dict>
@@ -222,6 +240,60 @@
 				<true/>
 				<key>ExecutablePath</key>
 				<string>Contents/MacOS/Lilu</string>
+				<key>MaxKernel</key>
+				<string></string>
+				<key>MinKernel</key>
+				<string></string>
+				<key>PlistPath</key>
+				<string>Contents/Info.plist</string>
+			</dict>
+			<dict>
+				<key>Arch</key>
+				<string>x86_64</string>
+				<key>BundlePath</key>
+				<string>AMFIAnchor.kext</string>
+				<key>Comment</key>
+				<string>AMFIAnchor 0.1.2</string>
+				<key>Enabled</key>
+				<false/>
+				<key>ExecutablePath</key>
+				<string>Contents/MacOS/AMFIAnchor</string>
+				<key>MaxKernel</key>
+				<string>25.99.99</string>
+				<key>MinKernel</key>
+				<string>20.0.0</string>
+				<key>PlistPath</key>
+				<string>Contents/Info.plist</string>
+			</dict>
+			<dict>
+				<key>Arch</key>
+				<string>x86_64</string>
+				<key>BundlePath</key>
+				<string>AMFIAnchorInjector.kext</string>
+				<key>Comment</key>
+				<string>AMFIAnchor injector (WhateverXe-Graphics CA)</string>
+				<key>Enabled</key>
+				<false/>
+				<key>ExecutablePath</key>
+				<string></string>
+				<key>MaxKernel</key>
+				<string>25.99.99</string>
+				<key>MinKernel</key>
+				<string>20.0.0</string>
+				<key>PlistPath</key>
+				<string>Contents/Info.plist</string>
+			</dict>
+			<dict>
+				<key>Arch</key>
+				<string>x86_64</string>
+				<key>BundlePath</key>
+				<string>WhateverXe.kext</string>
+				<key>Comment</key>
+				<string>WhateverXe 0.8.3 official</string>
+				<key>Enabled</key>
+				<false/>
+				<key>ExecutablePath</key>
+				<string>Contents/MacOS/WhateverXe</string>
 				<key>MaxKernel</key>
 				<string></string>
 				<key>MinKernel</key>
@@ -323,47 +395,11 @@
 				<key>Arch</key>
 				<string>Any</string>
 				<key>BundlePath</key>
-				<string>WhateverGreen.kext</string>
-				<key>Comment</key>
-				<string></string>
-				<key>Enabled</key>
-				<true/>
-				<key>ExecutablePath</key>
-				<string>Contents/MacOS/WhateverGreen</string>
-				<key>MaxKernel</key>
-				<string></string>
-				<key>MinKernel</key>
-				<string></string>
-				<key>PlistPath</key>
-				<string>Contents/Info.plist</string>
-			</dict>
-			<dict>
-				<key>Arch</key>
-				<string>Any</string>
-				<key>BundlePath</key>
-				<string>NootedGreen.kext</string>
-				<key>Comment</key>
-				<string>Iris Xe acceleration (Tiger Lake driver). Replace with the build from install.sh</string>
-				<key>Enabled</key>
-				<false/>
-				<key>ExecutablePath</key>
-				<string>Contents/MacOS/NootedGreen</string>
-				<key>MaxKernel</key>
-				<string></string>
-				<key>MinKernel</key>
-				<string>25.0.0</string>
-				<key>PlistPath</key>
-				<string>Contents/Info.plist</string>
-			</dict>
-			<dict>
-				<key>Arch</key>
-				<string>Any</string>
-				<key>BundlePath</key>
 				<string>CpuTopologyRebuild.kext</string>
 				<key>Comment</key>
 				<string>Groups E-cores as extra threads of P-cores (2P+8E). Off for the install</string>
 				<key>Enabled</key>
-				<false/>
+				<true/>
 				<key>ExecutablePath</key>
 				<string>Contents/MacOS/CpuTopologyRebuild</string>
 				<key>MaxKernel</key>
@@ -647,27 +683,9 @@
 				<key>Arch</key>
 				<string>Any</string>
 				<key>BundlePath</key>
-				<string>USBToolBox.kext</string>
+				<string>USBMap.kext</string>
 				<key>Comment</key>
 				<string></string>
-				<key>Enabled</key>
-				<true/>
-				<key>ExecutablePath</key>
-				<string>Contents/MacOS/USBToolBox</string>
-				<key>MaxKernel</key>
-				<string></string>
-				<key>MinKernel</key>
-				<string></string>
-				<key>PlistPath</key>
-				<string>Contents/Info.plist</string>
-			</dict>
-			<dict>
-				<key>Arch</key>
-				<string>Any</string>
-				<key>BundlePath</key>
-				<string>UTBDefault.kext</string>
-				<key>Comment</key>
-				<string>Generic all-ports injector. Replace with your own UTBMap.kext after mapping</string>
 				<key>Enabled</key>
 				<true/>
 				<key>ExecutablePath</key>
@@ -994,7 +1012,7 @@
 			<key>HibernateSkipsPicker</key>
 			<false/>
 			<key>HideAuxiliary</key>
-			<true/>
+			<false/>
 			<key>InstanceIdentifier</key>
 			<string></string>
 			<key>LauncherOption</key>
@@ -1098,7 +1116,7 @@
 				<key>revcpuname</key>
 				<string>13th Gen Intel(R) Core(TM) i5-1345U</string>
 				<key>revpatch</key>
-				<string>sbvmm,cpuname</string>
+				<string>cpuname</string>
 				<key>rtc-blacklist</key>
 				<data>
 				</data>
@@ -1120,7 +1138,7 @@
 				AAAAAAAAAAAAAAAAAAA=
 				</data>
 				<key>boot-args</key>
-				<string>-v keepsyms=1 debug=0x100 -vi2c-force-polling alcid=11 -alcbeta</string>
+				<string>-v keepsyms=1 debug=0x100 alcid=11 -alcbeta</string>
 				<key>csr-active-config</key>
 				<data>
 				EwoAAA==

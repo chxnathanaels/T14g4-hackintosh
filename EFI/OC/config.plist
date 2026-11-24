@@ -38,6 +38,22 @@
 				<key>Path</key>
 				<string>SSDT-USB-Reset.aml</string>
 			</dict>
+			<dict>
+				<key>Comment</key>
+				<string>Deep Idle S0 sleep (LPS0/LXEN)</string>
+				<key>Enabled</key>
+				<true/>
+				<key>Path</key>
+				<string>SSDT-DeepIdle.aml</string>
+			</dict>
+			<dict>
+				<key>Comment</key>
+				<string>Lid/power button wake from Deep Idle (PRW0 -&gt; EC GPE 0x6E)</string>
+				<key>Enabled</key>
+				<true/>
+				<key>Path</key>
+				<string>SSDT-LIDWAKE.aml</string>
+			</dict>
 		</array>
 		<key>Delete</key>
 		<array/>
@@ -196,43 +212,13 @@
 			</dict>
 			<key>PciRoot(0x0)/Pci(0x2,0x0)</key>
 			<dict>
-				<key>AAPL,ig-platform-id</key>
-				<data>
-				AABJmg==
-				</data>
-				<key>AAPL,slot-name</key>
-				<string>built-in</string>
-				<key>built-in</key>
-				<data>
-				AA==
-				</data>
-				<key>complete-modeset</key>
-				<data>
-				AQAAAA==
-				</data>
-				<key>device-id</key>
-				<data>
-				SZoAAA==
-				</data>
-				<key>enable-max-pixel-clock-override</key>
-				<data>
-				AQAAAA==
-				</data>
-				<key>force-online</key>
-				<data>
-				AQAAAA==
-				</data>
 				<key>framebuffer-patch-enable</key>
 				<data>
 				AQAAAA==
 				</data>
-				<key>hda-gfx</key>
-				<string>onboard-1</string>
-				<key>model</key>
-				<string>Intel Iris Xe Graphics</string>
-				<key>rps-control</key>
+				<key>framebuffer-stolenmem</key>
 				<data>
-				AQAAAA==
+				AADAAw==
 				</data>
 			</dict>
 		</dict>
@@ -254,6 +240,60 @@
 				<true/>
 				<key>ExecutablePath</key>
 				<string>Contents/MacOS/Lilu</string>
+				<key>MaxKernel</key>
+				<string></string>
+				<key>MinKernel</key>
+				<string></string>
+				<key>PlistPath</key>
+				<string>Contents/Info.plist</string>
+			</dict>
+			<dict>
+				<key>Arch</key>
+				<string>x86_64</string>
+				<key>BundlePath</key>
+				<string>AMFIAnchor.kext</string>
+				<key>Comment</key>
+				<string>AMFIAnchor 0.1.2</string>
+				<key>Enabled</key>
+				<true/>
+				<key>ExecutablePath</key>
+				<string>Contents/MacOS/AMFIAnchor</string>
+				<key>MaxKernel</key>
+				<string>25.99.99</string>
+				<key>MinKernel</key>
+				<string>20.0.0</string>
+				<key>PlistPath</key>
+				<string>Contents/Info.plist</string>
+			</dict>
+			<dict>
+				<key>Arch</key>
+				<string>x86_64</string>
+				<key>BundlePath</key>
+				<string>AMFIAnchorInjector.kext</string>
+				<key>Comment</key>
+				<string>AMFIAnchor injector (WhateverXe-Graphics CA)</string>
+				<key>Enabled</key>
+				<true/>
+				<key>ExecutablePath</key>
+				<string></string>
+				<key>MaxKernel</key>
+				<string>25.99.99</string>
+				<key>MinKernel</key>
+				<string>20.0.0</string>
+				<key>PlistPath</key>
+				<string>Contents/Info.plist</string>
+			</dict>
+			<dict>
+				<key>Arch</key>
+				<string>x86_64</string>
+				<key>BundlePath</key>
+				<string>WhateverXe.kext</string>
+				<key>Comment</key>
+				<string>WhateverXe 0.8.3 official</string>
+				<key>Enabled</key>
+				<true/>
+				<key>ExecutablePath</key>
+				<string>Contents/MacOS/WhateverXe</string>
 				<key>MaxKernel</key>
 				<string></string>
 				<key>MinKernel</key>
@@ -348,42 +388,6 @@
 				<string></string>
 				<key>MinKernel</key>
 				<string></string>
-				<key>PlistPath</key>
-				<string>Contents/Info.plist</string>
-			</dict>
-			<dict>
-				<key>Arch</key>
-				<string>Any</string>
-				<key>BundlePath</key>
-				<string>WhateverGreen.kext</string>
-				<key>Comment</key>
-				<string></string>
-				<key>Enabled</key>
-				<true/>
-				<key>ExecutablePath</key>
-				<string>Contents/MacOS/WhateverGreen</string>
-				<key>MaxKernel</key>
-				<string></string>
-				<key>MinKernel</key>
-				<string></string>
-				<key>PlistPath</key>
-				<string>Contents/Info.plist</string>
-			</dict>
-			<dict>
-				<key>Arch</key>
-				<string>Any</string>
-				<key>BundlePath</key>
-				<string>NootedGreen.kext</string>
-				<key>Comment</key>
-				<string>Iris Xe acceleration (Tiger Lake driver). Replace with the build from install.sh</string>
-				<key>Enabled</key>
-				<true/>
-				<key>ExecutablePath</key>
-				<string>Contents/MacOS/NootedGreen</string>
-				<key>MaxKernel</key>
-				<string></string>
-				<key>MinKernel</key>
-				<string>25.0.0</string>
 				<key>PlistPath</key>
 				<string>Contents/Info.plist</string>
 			</dict>
@@ -685,7 +689,7 @@
 				<key>Enabled</key>
 				<true/>
 				<key>ExecutablePath</key>
-				<string>Contents/MacOS/USBToolBox</string>
+				<string></string>
 				<key>MaxKernel</key>
 				<string></string>
 				<key>MinKernel</key>
@@ -1134,7 +1138,7 @@
 				AAAAAAAAAAAAAAAAAAA=
 				</data>
 				<key>boot-args</key>
-				<string>keepsyms=1 -ngreentglwithgfx -allow3d -disablegfxfirmware ngreen-dmc=adlp -ngreenv189 -ngreenkeepefi -ngreenxefix -ngreenfixbootmode amfi_get_out_of_my_way=1 ngreenSched=4 ngreenV142=3 ngreen-eu=80 ngreen-l3=6 gfxrst=1 -ngreenpm alcid=11 -alcbeta ngreenpmepp=192 -ngreengva</string>
+				<string>keepsyms=1 alcid=11 -alcbeta -v -allow3d -disablegfxfirmware -igfxdvmt wexpaneltype=0 acpi=0xC</string>
 				<key>csr-active-config</key>
 				<data>
 				EwoAAA==
