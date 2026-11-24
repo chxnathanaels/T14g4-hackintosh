@@ -1,217 +1,142 @@
-# ThinkPad T14 Gen 4 (Intel) Hackintosh: macOS Tahoe 26.7.1
+# WhateverXe
 
-OpenCore EFI for the **Lenovo ThinkPad T14 Gen 4 (Intel, 13th gen)** running **macOS Tahoe 26.7.1 (25G241)** with
-**Metal acceleration on the Intel Iris Xe** (Raptor Lake-U, `8086:A7A1`) through NootedGreen.
+[日本語](README_ja.md)
 
-> [!WARNING]
-> Experimental. The graphics stack is a patched Tiger Lake driver running on Raptor Lake. Expect occasional stutters,
-> and keep a backup EFI on a USB stick. **Only build 25G241 is supported. Do not update macOS.**
+WhateverXe is a Lilu plugin, derived from WhateverGreen, that adapts Apple graphics drivers for selected Intel Xe-LP integrated GPUs.
+Use the latest releases of [WhateverXe](https://github.com/b00t0x/WhateverXe/releases) and [WhateverXe Graphics](https://github.com/b00t0x/WhateverXe-Graphics/releases) together. See [CHANGELOG](CHANGELOG.md) for release notes.
 
-![About This Mac on the T14 Gen 4](docs/screenshots/about-this-mac.png)
+## Compatibility
 
-<details>
-<summary>Full desktop screenshot</summary>
+| macOS | Required version |
+| --- | --- |
+| Big Sur | 11.7.11 |
+| Monterey | 12.7.6 |
+| Ventura | 13.7.8 |
+| Sonoma | 14.8.9 |
+| Sequoia | 15.8.x |
+| Tahoe | 26.7 or newer |
 
-![Desktop](docs/screenshots/desktop.png)
+Sequoia and Tahoe accept compatible updates within their OS family. Future Apple changes may require an update to WEX or Graphics.
 
-</details>
+### Tested on hardware
 
----
+- Tiger Lake-U: 48- and 80-EU configurations.
+- Alder Lake-N: 16- and 24-EU configurations.
+- Twin Lake: 32-EU configurations.
+- Alder Lake-H: 96-EU configurations, including single-channel operation.
+- Alder Lake-S: UHD Graphics 770.
+- Raptor Lake-U: 48-EU configurations.
 
-## Hardware
+See [tested features and known issues](#tested-features-and-known-issues) for OS coverage and display configurations. PCI IDs are listed in [device selection](docs/device-selection.md).
 
-| Component | Model |
-|---|---|
-| Laptop | Lenovo ThinkPad T14 Gen 4 (Intel) |
-| RAM | 32 GB DDR5-5200 |
-| CPU | Intel Core i5-1345U (Raptor Lake-U, 2P + 8E, 12 threads) |
-| iGPU | Intel Iris Xe, 80 EU, `8086:A7A1`, spoofed as Tiger Lake `9A49` |
-| Display | 14" 1920×1200 eDP |
-| Audio | Realtek ALC (layout-id 11) |
-| Wi-Fi / BT | Intel AX211 (CNVi `51F1`) / Intel BT `8087:0033` |
-| Touchpad | Synaptics I2C-HID (`TPD0`), GPIO interrupt mode |
-| TrackPoint / keyboard | PS/2 |
-| Storage | NVMe SSD |
-| Battery | 52.5 Wh |
+### Expected to work, not yet tested on hardware
 
-## Status
+- Other supported Tiger Lake-U/H35 configurations, including 96 EU, and Tiger Lake-H45.
+- Other supported Alder Lake-N / Twin Lake configurations.
+- Other supported Alder Lake-H/P/U and Raptor Lake-H/P/U configurations.
+- Other supported Alder Lake-S/HX and Raptor Lake-S/HX configurations.
+- Internal eDP on Alder Lake-N / Twin Lake and Alder Lake-H/P/U / Raptor Lake-H/P/U is implemented but has not been tested on hardware. Brightness supports PCH PWM and standard VESA AUX; panel-specific OLED/Intel HDR brightness remains unqualified.
 
-### Working
-- [x] **Metal / Core Animation acceleration** (Liquid Glass, animations)
-- [x] **Hardware video decode** H.264 + HEVC for VideoToolbox apps (QuickTime, Photos, Chrome) with `-ngreengva` + patched VA plugin
-- [x] Internal display, brightness keys
-- [x] All 12 CPU threads, power management with live EPP control (`debug.xepm.epp`)
-- [x] Audio: speakers, headphone jack
-- [x] Wi-Fi (itlwm + HeliPort), Bluetooth
-- [x] Touchpad with gestures (VoodooI2C, **interrupt mode**, not polling), TrackPoint, keyboard
-- [x] USB-A ports (USB 2 + USB 3), mapped with USBMap
-- [x] Webcam, battery status, NVMe
+### Further implementation required
 
-### Not working / limitations
-- [ ] **System sleep**: the firmware is Modern Standby only (no S3), so sleep is disabled. Lid close turns the display off.
-- [ ] **Hardware video encode**: not available on Raptor Lake yet (upstream research paused)
-- [ ] **Safari hardware decode**: Safari's sandbox blocks the patched VA plugin, so Safari decodes on the CPU
-- [ ] **VP9 / AV1 hardware decode**
-- [ ] **FairPlay** (Apple Music, Apple TV+) does not play while `-ngreengva` is on
-- [ ] **AirDrop / AirPlay receiver / Continuity**: Intel CNVi Wi-Fi, can't be swapped for Broadcom
-- [ ] **Fingerprint / Touch ID**
-- [ ] **Fan RPM reading** (YogaSMC reports 0)
-- [ ] **Display power saving (PSR / DC states)**: disabled by NootedGreen, costs some idle power
-- [ ] **Thunderbolt 4 / USB-C as USB**: untested, not in the USB map (charging works)
-- [ ] **macOS updates past 25G241**: the patches are byte-specific to this build
+- Rocket Lake-S: display control requires additional support.
 
-## Power and battery (measured)
+### No support planned
 
-| Scenario | Draw |
-|---|---|
-| Idle, CPU package (xe-temp) | ~2.3 W (cores ~0.4 W) |
-| Idle, whole laptop (`ioreg`) | ~9.5 W (brightness-dependent) |
-| YouTube in **Safari** (CPU decode) | ~12 W |
-| YouTube in **Chrome** (GPU decode via VA plugin) | ~22 W |
-| Active use peaks | ~21 W |
-
-**Use Safari for YouTube.** On this setup the patched GPU decode path in Chrome costs more power than Safari's
-software decode. Expect about 3.5–5 hours of light use.
-
-## Boot arguments
-
-```
-keepsyms=1 -ngreentglwithgfx -allow3d -disablegfxfirmware ngreen-dmc=adlp -ngreenv189 -ngreenkeepefi
--ngreenxefix -ngreenfixbootmode amfi_get_out_of_my_way=1 ngreenSched=4 ngreenV142=3 ngreen-eu=80 ngreen-l3=6
-gfxrst=1 -ngreenpm ngreenpmepp=192 -ngreengva alcid=11 -alcbeta
-```
-
-| Argument | Purpose |
-|---|---|
-| `ngreen-eu=80 ngreen-l3=6` | **Required for 80 EU chips** (i5-1345U, i5-1335U, i5-1340P…). Remove on 96 EU chips (i7-1355U, i7-1365U…). |
-| `ngreen-dmc=adlp` | Loads the Alder Lake-P display firmware (also used by Raptor Lake) |
-| `-ngreenpm` | NootedGreen power profile (HWP for hybrid cores, C8/C10, D3) |
-| `ngreenpmepp=192` | CPU Energy Performance Preference: 0 = max performance, 128 = balanced, 192 = power saving, 255 = minimum. Change live with `sudo sysctl -w debug.xepm.epp=N`. |
-| `-ngreengva` | Hardware video decode (needs the VA plugin, see below). Remove it for Apple Music / FairPlay. |
-| `amfi_get_out_of_my_way=1` | Required by the patched user-space graphics stack |
-| `alcid=11 -alcbeta` | AppleALC layout for the Realtek codec on Tahoe |
-
-Removed from the original config for daily use: `-v` (verbose boot), `IGLogLevel=3` (GPU debug logging), and `sbvmm`
-from `revpatch` (stops Software Update from offering builds that break acceleration).
-
-## Kexts
-
-| Kext | Version | Purpose |
-|---|---|---|
-| Lilu | 1.7.3 | Patching framework |
-| VirtualSMC + SMCBatteryManager + SMCProcessor | 1.3.9 | SMC emulation, battery |
-| ECEnabler | 1.0.6 | ThinkPad EC battery fields |
-| YogaSMC | 1.5.3 | ThinkPad Fn keys and sensors |
-| WhateverGreen | 1.7.2 | Display helpers (runs in NootedGreen's coexist mode) |
-| **NootedGreen** | 1.0.0 | **Iris Xe acceleration** (Tiger Lake driver on Raptor Lake) |
-| CpuTopologyRebuild | 2.0.2 | Hybrid P/E-core topology |
-| RestrictEvents | 1.1.7 | CPU name, misc patches |
-| NVMeFix | 1.1.4 | NVMe power management |
-| AppleALC + SimpleHDA | 1.9.8 / 1.0.0 | Audio on Tahoe |
-| BrightnessKeys | 1.0.4 | Brightness Fn keys |
-| VoodooPS2Controller | 2.3.8 | Keyboard, TrackPoint |
-| VoodooI2C + VoodooI2CHID (+ patched VoodooGPIO) | 2.9.1 | Touchpad, GPIO interrupt mode |
-| **USBMap** | (generated) | USB port map for this laptop |
-| XHCI-unsupported | 0.9.2 | PCH XHCI `8086:51ED` |
-| itlwm | 2.3.0 | Intel Wi-Fi (use with HeliPort) |
-| AirportItlwm | 2.4.0-alpha | **Disabled.** Native Wi-Fi menu, but fails on many networks. Never enable together with itlwm. |
-| IntelBluetoothFirmware + IntelBTPatcher + BlueToolFixup | 2.5.1 / 2.7.3 | Bluetooth |
-
-## ACPI
-
-| SSDT | Purpose |
-|---|---|
-| `SSDT-PLUG-ALT` | CPU objects as `Processor()` for Alder/Raptor Lake |
-| `SSDT-XOSI` | Windows `_OSI` emulation (enables the I2C touchpad paths), with `_OSI → XOSI` rename |
-| `SSDT-T14G4` | USBX, AWAC → RTC, MCHC, SBUS/BUS0, PNLF. Path-guarded, macOS only |
-| `SSDT-USB-Reset` | Resets RHUB so the USB map applies |
-
-## USB map
-
-Mapped with [USBMap](https://github.com/corpnewt/USBMap) (7 ports on `XHCI@14`):
-
-| Port | Address | Type | Device |
-|---|---|---|---|
-| HS01 | `14100000` | 3 | USB-A port A (USB 2 half) |
-| HS07 | `14700000` | 3 | USB-A port B (USB 2 half) |
-| SS01 | `14d00000` | 3 | USB-A port A (USB 3 half) |
-| SS02 | `14e00000` | 3 | USB-A port B (USB 3 half) |
-| HS03 | `14300000` | 255 | Fingerprint reader (Goodix) |
-| HS04 | `14400000` | 255 | Webcam |
-| HS10 | `14a00000` | 255 | Bluetooth |
-
-The Thunderbolt controller (`TXHC`) is left out of the map.
+- Xe-LPG, including Meteor Lake integrated graphics.
+- Xe2 and later graphics architectures.
 
 ## Installation
 
-### 1. BIOS
-- Secure Boot: **off**
-- Everything else default (UEFI only)
+1. Add Lilu 1.7.2 or later and `WhateverXe.kext` from the **RELEASE** ZIP to OpenCore, with WEX after Lilu. Install [AMFIAnchor](https://github.com/b00t0x/AMFIAnchor/releases/latest) and [`AMFIAnchorInjector.kext`](https://github.com/b00t0x/AMFIAnchor/tree/main/Injectors) as described in the [OpenCore instructions](https://github.com/b00t0x/AMFIAnchor/blob/main/README.md#install-with-opencore).
+2. Set `csr-active-config=03080000` (`0x803`) and apply the [configuration](#configuration).
+3. Boot the target macOS, install the latest [WhateverXe Graphics pkg](https://github.com/b00t0x/WhateverXe-Graphics/releases), then restart. [Package installation and removal](https://github.com/b00t0x/WhateverXe-Graphics#install).
 
-### 2. Before booting
-- **Generate your own SMBIOS** (`MacBookPro16,2`) with [GenSMBIOS](https://github.com/corpnewt/GenSMBIOS) and fill
-  `PlatformInfo > Generic` (`SystemSerialNumber`, `MLB`, `SystemUUID`, `ROM`). The fields in this repo are blank.
-- If your CPU has **96 EU**, remove `ngreen-eu=80 ngreen-l3=6`.
-- If your USB layout differs, make your own USBMap.kext.
+If upgrading from AMFIPass 1.4.1 Mod, remove its OpenCore entry. Keep AMFI enabled. WhateverGreen and WhateverXe must not be enabled together. `amfi=0x80` and `ipc_control_port_options=0` are unnecessary.
 
-### 3. Install macOS
-Install **macOS Tahoe 26.7.1 (25G241)** exactly. Don't install any other build.
+Graphics installs under `/Library` and rebuilds AuxKC without patching System files or snapshots. Restore an old Xe System patch before installing. If you use [OCLP](https://github.com/dortania/OpenCore-Legacy-Patcher) for other root patches, load OCLP's AMFIPass after AMFIAnchor and its injector.
 
-### 4. Graphics stack (after first boot)
-Follow the accelerated-stack steps from
-[JulioNectar/Hackintosh-XPS13Plus-IrisXe-Tahoe](https://github.com/JulioNectar/Hackintosh-XPS13Plus-IrisXe-Tahoe)
-(`install.sh`): it builds and installs NootedGreen, the patched Metal driver, `libxedrv` and the shader compiler.
+## Configuration
 
-### 5. Hardware video decode (optional)
-```sh
-git clone https://github.com/sgiammori/NootedGreen.git ~/NootedGreen
-git clone https://github.com/JulioNectar/Hackintosh-XPS13Plus-IrisXe-Tahoe ~/xps
-cd ~/xps
-zsh macos/vadriver/build-vadriver.sh ~/NootedGreen/sle_Internal/sle
-sudo rm -rf /Library/GPUBundles/AppleIntelTGLGraphicsVADriver.bundle
-sudo ditto ~/xps/macos/out/AppleIntelTGLGraphicsVADriver.bundle /Library/GPUBundles/AppleIntelTGLGraphicsVADriver.bundle
-```
-Then add `-ngreengva` to boot-args and reboot. **Install the plugin before adding the boot-arg**, otherwise video
-playback breaks. Verify:
-```sh
-ioreg -l | grep -E "IOGVAHEVCDecode|IOVARendererID"   # expect "2" and 17301632
+### Required boot arguments
+
+Add to OpenCore's `boot-args`:
+
+```text
+-allow3d -disablegfxfirmware
 ```
 
-### 6. Recommended post-install
+### DVMT
+
+Set **DVMT Pre-Allocated to 96MB** in BIOS/UEFI where possible.
+If it is fixed at **60MB**, also add `-igfxdvmt` and set these iGPU properties under `DeviceProperties > Add` (usually `PciRoot(0x0)/Pci(0x2,0x0)`):
+
+| Property | Type | Value (hex) |
+| --- | --- | --- |
+| `framebuffer-patch-enable` | Data | `01000000` |
+| `framebuffer-stolenmem` | Data | `0000C003` |
+
+These settings are unnecessary at 96MB and do not increase firmware-allocated memory.
+
+### Other settings
+
+- Add `SSDT-PNLF` for internal-display brightness control.
+- GPU selection is automatic; a `device-id` override is normally unnecessary.
+- Alder Lake-N / Twin Lake and Alder Lake-H/P/U / Raptor Lake-H/P/U select tiling automatically. Do not use `-yTileDisable`; `AAPL,GfxYTile` is unnecessary.
+
+## Tested features and known issues
+
+The common regression checks cover Metal, OpenGL, OpenCL, hardware H.264 encode/decode and HEVC decode. The table summarizes OS coverage and configuration-specific display features.
+
+| Configuration | Verified coverage |
+| --- | --- |
+| Tiger Lake mini PCs | Big Sur–Tahoe: 80 EU, two 1080p60 displays, display off/on, Safari video and Widevine |
+| Tiger Lake laptops | Big Sur–Tahoe: 48 EU, internal eDP and brightness, HDMI/USB-C, up to three displays and display off/on |
+| Alder Lake-N mini PCs | Big Sur–Tahoe: 16/24 EU, two 1080p60 HDMI displays and display off/on |
+| Alder Lake-N / Twin Lake laptops | MicroPC 2 and MiniBook X N100 on Big Sur/Tahoe: MIPI DSI, brightness, rotation, display off/on and HDMI/USB-C coexistence. MicroPC 2: HiDPI and up to three displays; MiniBook X N100: optional 60 Hz |
+| Raptor Lake-U laptop | MiniBook X U300 on Big Sur/Tahoe: internal MIPI DSI, brightness, rotation, HiDPI and up to two USB-C displays. Internal panel: 50 Hz; optional 60 Hz also tested on Big Sur |
+| Alder Lake-H | Big Sur–Tahoe: 96 EU, three displays using HDMI and a DP-to-HDMI adapter. Single-channel `4626` graphics acceleration checked on Big Sur |
+| Alder Lake-S | Big Sur–Tahoe: UHD 770, HDMI/DP/USB-C and up to three displays; Safari video, with Widevine checked on Big Sur/Tahoe |
+
+MIPI DSI support is **experimental**, limited to the tested GPD MicroPC 2 and CHUWI MiniBook X N100/U300 panels. Do not expect it to work on other devices.
+
+System sleep/wake support is **experimental**. Tested configurations are MiniBook X N100/U300 (MIPI DSI) on Big Sur and Tahoe with model-specific ACPI settings, using the internal display alone or up to two external displays. Other models, OS versions and prolonged DarkWake cycles remain unverified.
+
+### Known issues and limits
+
+- DisplayPort reconnection can cause black screens or freezes. Tiger Lake USB-C reconnection is also unreliable; Alder Lake-S DP output/reconnection can be slow.
+- Some image-conversion operations can crash applications.
+- Safari video may occasionally drop frames. FairPlay-protected playback is unsupported.
+- Up to three displays are supported. Resolutions beyond the tested configurations remain unverified.
+- Some connector layouts and backlight methods, MST and Thunderbolt-managed outputs are unsupported.
+
+### Roadmap
+
+- Complete DisplayPort, USB-C and internal-display support on Alder Lake-N / Twin Lake and Alder Lake-H/P/U / Raptor Lake-H/P/U.
+- Improve display reconnection reliability and extend system sleep/wake coverage.
+
+## Build and test
+
+Requires macOS, Xcode command-line tools, Python 3.9+, MacKernelSDK and Lilu 1.7.2 development headers/library. Place `MacKernelSDK/` and `Lilu.kext/` in the repository root, or pass `--sdk` and `--lilu`.
+
 ```sh
-# Disable system sleep (no S3 on this laptop); lid close = display off
-sudo zsh ~/xps/tools/sleep/10-pmset-safe.sh
-
-# CPU temperatures and package/CPU/GPU watts in the menu bar
-zsh ~/xps/tools/xe-temp/build.sh && cp -R ~/xps/tools/build/xe-temp.app ~/Applications/
-
-# Resolution / HiDPI: use xe-res, NOT System Settings > Displays
-clang -O2 -o ~/xps/tools/build/xe-res ~/xps/tools/xe-res.c -framework CoreGraphics -framework CoreFoundation
-```
-- **System Settings > Accessibility > Display > Reduce Transparency**, and **Motion > Reduce Motion**: optional. They
-  cut GPU work and heat during active use; idle power is low either way.
-- **Software Update**: turn off automatic updates.
-- **Wi-Fi**: use HeliPort with itlwm.
-
-## Useful commands
-
-```sh
-sysctl debug.xepm                                   # power profile status (EPP, C-states, D3)
-sudo sysctl -w debug.xepm.epp=128                   # change EPP live
-ioreg -rn AppleSmartBattery | grep -E '"(InstantAmperage|Voltage)"'   # live battery draw
-ioreg -lw0 -r -c VoodooI2CDeviceNub | grep -i "Interrupt Mode"        # touchpad: GPIO = interrupts
+python3 tools/build.py --release
+python3 tools/test.py
 ```
 
-## Credits
+Output is under `build/`. AppleIntelTGLCompat is built here and distributed through Graphics. Optional exact-donor tests accept `--donor` and `--accelerator` paths.
 
-- [JulioNectar/Hackintosh-XPS13Plus-IrisXe-Tahoe](https://github.com/JulioNectar/Hackintosh-XPS13Plus-IrisXe-Tahoe): Raptor Lake Iris Xe acceleration stack, NootedGreen fork, VA plugin, tools
-- [dssoftx/Hackintosh-X1Carbon-G11-IrisXe-Tahoe](https://github.com/dssoftx/Hackintosh-X1Carbon-G11-IrisXe-Tahoe): ThinkPad Raptor Lake-U port
-- [sgiammori/NootedGreen](https://github.com/sgiammori/NootedGreen): NootedGreen
-- [Acidanthera](https://github.com/acidanthera): OpenCore, Lilu, VirtualSMC, WhateverGreen, AppleALC, NVMeFix, RestrictEvents, VoodooPS2
-- [VoodooI2C](https://github.com/VoodooI2C/VoodooI2C), [OpenIntelWireless](https://github.com/OpenIntelWireless), [zhen-zen/YogaSMC](https://github.com/zhen-zen/YogaSMC), [1Revenger1/ECEnabler](https://github.com/1Revenger1/ECEnabler), [corpnewt](https://github.com/corpnewt) (USBMap, ProperTree, GenSMBIOS)
-- [Dortania OpenCore Install Guide](https://dortania.github.io/OpenCore-Install-Guide/)
+## License and credits
 
-## Disclaimer
+WhateverXe retains WhateverGreen's copyright notices and BSD-3-Clause license.
+See [LICENSE.txt](LICENSE.txt). Lilu and MacKernelSDK are separate dependencies.
 
-For educational purposes. You're responsible for your own hardware and data. Apple's driver binaries are not
-redistributed here; the graphics stack is built from the linked projects on your own machine.
+Thanks to [JulioNectar/XPS13Plus](https://github.com/JulioNectar/Hackintosh-XPS13Plus-IrisXe-Tahoe) for sharing its Xe graphics work. Its compiler adapter and LLVM bridge informed the OS-native AIR conversion used in WhateverXe Graphics.
+
+Internal-panel work also draws on [WhateverXe-RaptorLakeP](https://github.com/samranahmad09/WhateverXe-RaptorLakeP), [X1Carbon-G11](https://github.com/dssoftx/Hackintosh-X1Carbon-G11-IrisXe-Tahoe), XPS13Plus and the [Linux i915 display sources](https://github.com/torvalds/linux/tree/v6.12/drivers/gpu/drm/i915/display) for hardware behavior and implementation comparisons.
+
+eDP boot-handoff and startup corrections also reference the reports and patches from [ann0see](https://github.com/ann0see/WhateverXe/tree/522c0a1bd60b9beac66e00dfd7414823680639dd), [belugaa-01](https://github.com/belugaa-01/WhateverXe-Patched), [Thatisjigen](https://github.com/Thatisjigen/WhateverXe), and [zsz-of](https://github.com/zsz-of/WhateverXe).
+
+The optional MiniBook X 60 Hz panel timing also draws on the [minibookx-ctl display guide](https://github.com/ishad0w/minibookx-ctl/blob/main/docs/guide/display.md).
+
+Display wake rearming and GGTT restoration were informed by [jkbuha/WhateverXe](https://github.com/jkbuha/WhateverXe). The AUX brightness investigation also referenced [JulioNectar](https://github.com/JulioNectar/Hackintosh-XPS13Plus-IrisXe-Tahoe); the VESA implementation uses protocol facts from Linux DRM, without copying NootedGreen code.
