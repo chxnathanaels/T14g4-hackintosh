@@ -1,0 +1,28 @@
+name: build
+on:
+  push:
+    branches: [droidmirror]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build app
+        run: ./scripts/package.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DroidMirror
+          path: dist/DroidMirror.zip
+      - name: Commit build
+        run: |
+          mkdir -p out
+          cp dist/DroidMirror.zip out/DroidMirror.zip
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add out/DroidMirror.zip
+          git commit -m "Build DroidMirror.zip [skip ci]" || exit 0
+          git push
