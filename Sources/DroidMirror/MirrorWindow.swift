@@ -22,6 +22,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
                               backing: .buffered, defer: false)
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        window.isReleasedWhenClosed = false
         window.title = "DroidMirror"
         window.backgroundColor = NSColor(white: 0.08, alpha: 1)
         window.isMovableByWindowBackground = false
@@ -95,7 +96,7 @@ final class MirrorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        model.disconnect()
+        model.disconnect(closeWindow: false)
     }
 
     override func showWindow(_ sender: Any?) {

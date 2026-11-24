@@ -32,6 +32,7 @@ final class ScrcpySession {
     private var audioSock: TCPSocket?
     private var control: TCPSocket?
     private var audioPlayer: AudioPlayer?
+    private let sendQueue = DispatchQueue(label: "DroidMirror.control", qos: .userInteractive)
     private var serverLog = ""
     private let stateLock = NSLock()
     private var stopped = false
@@ -248,7 +249,8 @@ final class ScrcpySession {
 
     func send(_ msg: Data) {
         guard let control else { return }
-        DispatchQueue.global(qos: .userInteractive).async {
+        // Serial queue: touch down/move/up must reach the phone in order.
+        sendQueue.async {
             try? control.write(msg)
         }
     }

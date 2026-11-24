@@ -148,14 +148,14 @@ final class AppModel: ObservableObject, ScrcpySessionDelegate {
         s.start()
     }
 
-    func disconnect() {
+    func disconnect(closeWindow: Bool = true) {
         reconnectTimer?.invalidate()
         session?.delegate = nil
         session?.stop()
         session = nil
         clipboardTimer?.invalidate()
         status = .idle
-        mirrorWindow?.close()
+        if closeWindow { mirrorWindow?.close() }
     }
 
     func showMirrorWindow() {
