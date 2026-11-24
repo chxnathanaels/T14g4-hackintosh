@@ -148,7 +148,7 @@ final class MirrorView: NSView {
     @objc func paste(_ sender: Any?) { model.pasteFromMac() }
     @objc func copy(_ sender: Any?) { model.copyFromPhone(cut: false) }
     @objc func cut(_ sender: Any?) { model.copyFromPhone(cut: true) }
-    @objc func selectAll(_ sender: Any?) {
+    @objc override func selectAll(_ sender: Any?) {
         model.send(Control.keycode(.down, AKey.a, meta: AKey.metaCtrlOn))
         model.send(Control.keycode(.up, AKey.a, meta: AKey.metaCtrlOn))
     }
