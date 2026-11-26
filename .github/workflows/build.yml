@@ -1,0 +1,31 @@
+name: build-latsof
+on:
+  push:
+    branches: [latsof-rpl]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build kext and helper
+        run: |
+          cd kext && zsh build.sh
+          cd .. && mkdir -p out/LatSOFAudio-RPL
+          cp -R kext/LatSOFAudio.kext kext/install.sh out/LatSOFAudio-RPL/
+          cp -R kext/latsof-default-input out/LatSOFAudio-RPL/
+          (cd out && ditto -c -k --keepParent LatSOFAudio-RPL LatSOFAudio-RPL.zip && rm -rf LatSOFAudio-RPL)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LatSOFAudio-RPL
+          path: out/LatSOFAudio-RPL.zip
+      - name: Commit build
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@users.noreply.github.com
+          git add out/LatSOFAudio-RPL.zip
+          git commit -m "Build LatSOFAudio-RPL [skip ci]" || exit 0
+          git push
